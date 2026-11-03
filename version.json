@@ -1,0 +1,9 @@
+{
+ "data_version": 1,
+ "data_sha256": "69d69351cf7de83cb7e3e31aa89c66228b594f9e8338f5c980fe241698b0d3dd",
+ "built": "2026-11-03T12:40:14Z",
+ "app_latest": "1.2.0",
+ "release_page": "https://github.com/TNM-Sk1750/gzw-material-finder-data/releases",
+ "built_by_app": "1.2.0",
+ "inputs_sha256": "b3a9253f652f07baa084fb8296c5541266050947ddcb2757989142e63996d6fc"
+}
