@@ -1,0 +1,182 @@
+/* Neon HUD palette - matches the EA Status widget (ea_widget.pyw). */
+:root {
+  --key: #010203;        /* colour-key: pixels this exact colour are see-through in the desktop shell */
+  --panel: #0a0c12;
+  --grid: #131826;
+  /* accent colour tells you the mode: pink while searching (in front), purple while pinned over the game */
+  --accent: #ff6ad5;        /* pink (search mode) */
+  --accent-dim: #b04a98;
+  --accent-rgb: 255, 106, 213;
+  --blue: #5fd0ff;         /* light blue: reads clearly against jungle green (was neon green) */
+  --blue-dim: #1d4a5e;
+  --orange: #ff9f1c;
+  --orange-hot: #ff5a1f;
+  --text: #a9dcff;         /* light blue body text (white was hard to read in game) */
+  --dim: #6f9cb8;
+  --mono: Consolas, "Cascadia Mono", monospace;
+  --tag: Bahnschrift, "Segoe UI", sans-serif;
+  --fs: 1;               /* text size multiplier (Ctrl+Alt+= / Ctrl+Alt+-) */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--key); color: var(--text); font: calc(13px * var(--fs))/1.4 var(--tag); }
+body { overflow: hidden; }
+
+#frame {
+  display: flex; flex-direction: column; height: 100vh; max-width: 460px; margin: 0 auto; position: relative;
+  background: repeating-linear-gradient(to bottom, transparent 0 11px, var(--grid) 11px 12px), var(--panel);
+  border: 2px solid var(--accent);
+  box-shadow: inset 0 0 18px rgba(var(--accent-rgb), .18);
+}
+/* light-blue corner brackets (EA widget layout) */
+#frame::before, #frame::after { content: ""; position: absolute; width: 16px; height: 16px; pointer-events: none; z-index: 2; }
+#frame::before { top: 3px; left: 3px; border-top: 2px solid var(--blue); border-left: 2px solid var(--blue); }
+#frame::after { bottom: 3px; right: 3px; border-bottom: 2px solid var(--blue); border-right: 2px solid var(--blue); }
+
+.muted { color: var(--dim); }
+header { display: flex; justify-content: space-between; align-items: center; padding: 7px 12px 5px 24px; cursor: move; user-select: none; }
+header .title { font: 600 calc(11px * var(--fs))/1 var(--tag); letter-spacing: .18em; color: var(--accent); text-shadow: 0 0 8px rgba(var(--accent-rgb), .7); }
+header #hk { font: calc(10px * var(--fs)) var(--mono); color: var(--accent-dim); }
+
+#searchbar { padding: 4px 12px 4px; }
+#q { width: 100%; padding: 8px 10px; background: #06070b; color: var(--blue); border: 1px solid var(--accent-dim); font: calc(15px * var(--fs)) var(--mono); outline: none; caret-color: var(--blue); }
+#q::placeholder { color: var(--dim); }
+#q:focus { border-color: var(--blue); box-shadow: 0 0 10px rgba(95, 208, 255, .35); }
+#frame.logging #q { border-color: var(--orange); box-shadow: 0 0 10px rgba(255, 159, 28, .35); color: var(--orange); }
+
+#results { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 12px 6px; min-height: 8px; }
+.chip { padding: 2px 8px; border: 1px solid var(--accent-dim); color: var(--dim); cursor: pointer; font: calc(11px * var(--fs)) var(--mono); white-space: nowrap; }
+.chip.sel { border-color: var(--blue); color: var(--blue); text-shadow: 0 0 6px rgba(95, 208, 255, .6); }
+.chip .k { font-size: calc(9px * var(--fs)); text-transform: uppercase; opacity: .7; margin-left: 4px; color: var(--accent); }
+
+main { flex: 1; overflow-y: auto; padding: 0 12px 10px; }
+/* visible scrollbar in the search view; the pinned HUD auto-fits instead (it cannot be scrolled) */
+main::-webkit-scrollbar { width: 11px; }
+main::-webkit-scrollbar-track { background: #06070b; border-left: 1px solid var(--accent-dim); }
+main::-webkit-scrollbar-thumb { background: var(--blue-dim); border: 1px solid var(--blue); border-radius: 2px; }
+main::-webkit-scrollbar-thumb:hover { background: var(--blue); }
+body.hud main::-webkit-scrollbar { width: 0; }
+.card-h { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 2px; }
+.card-h .name { font: 600 calc(20px * var(--fs)) var(--tag); color: var(--blue); text-shadow: 0 0 10px rgba(95, 208, 255, .55); }
+.card-h .cat { font: calc(10px * var(--fs)) var(--mono); text-transform: uppercase; color: var(--accent); letter-spacing: .1em; }
+.used { color: var(--dim); font: calc(11.5px * var(--fs)) var(--mono); margin-bottom: 6px; }
+.used b { color: var(--text); font-weight: 600; }
+section { margin-top: 8px; }
+h3 { font: 600 calc(10px * var(--fs))/1 var(--tag); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); margin: 0 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--accent-dim); text-shadow: 0 0 6px rgba(var(--accent-rgb), .6); }
+.row { padding: 5px 0; border-bottom: 1px dashed var(--grid); }
+.row:last-child { border-bottom: 0; }
+.row .top { display: flex; align-items: center; gap: 6px; }
+.row .poi { font: 600 calc(14px * var(--fs)) var(--tag); color: var(--text); letter-spacing: .02em; }
+.row .ptier { font: calc(10px * var(--fs)) var(--mono); color: var(--dim); }
+.row .crates { margin-left: auto; font: calc(11px * var(--fs)) var(--mono); }
+.spots { margin-top: 2px; font: calc(11.5px * var(--fs)) var(--mono); color: var(--dim); }
+.spot { color: var(--text); cursor: pointer; text-decoration: none; border-bottom: 1px dotted var(--accent); }
+.spot:hover { color: var(--blue); border-color: var(--blue); }
+.badge { font: 700 calc(9px * var(--fs))/1 var(--mono); letter-spacing: .08em; padding: 3px 5px; text-transform: uppercase; color: #05060a; }
+.b-mine { background: var(--blue); box-shadow: 0 0 8px rgba(95, 208, 255, .6); }
+.b-confirmed { background: var(--accent); box-shadow: 0 0 8px rgba(var(--accent-rgb), .6); }
+.b-reported { background: var(--orange); box-shadow: 0 0 8px rgba(255, 159, 28, .5); }
+.b-inferred { background: transparent; color: var(--text); border: 1px solid var(--dim); padding: 2px 4px; }
+.b-guess { background: transparent; color: var(--dim); border: 1px dashed var(--dim); padding: 2px 4px; }
+.tag3 { color: var(--orange-hot); } .tag2 { color: var(--orange); }
+ul.says { margin: 0; padding-left: 16px; color: var(--dim); font: calc(11.5px * var(--fs)) var(--mono); }
+ul.says li { margin: 2px 0; }
+.src { font: calc(10px * var(--fs)) var(--mono); color: var(--accent); cursor: pointer; margin-left: 3px; }
+.empty { color: var(--dim); padding: 10px 0; font: calc(12px * var(--fs)) var(--mono); }
+.empty b { color: var(--blue); font-weight: 400; }
+.note { color: var(--dim); font: italic calc(11.5px * var(--fs)) var(--mono); margin: 4px 0; }
+.log-prompt { color: var(--orange); font: calc(12px * var(--fs)) var(--mono); margin: 4px 0 6px; }
+.place-opt { padding: 4px 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; font: calc(12px * var(--fs)) var(--mono); }
+.place-opt.sel { outline: 1px solid var(--orange); color: var(--orange); }
+.place-opt .pp { color: var(--dim); white-space: nowrap; }
+footer { display: flex; justify-content: space-between; gap: 8px; padding: 5px 12px 6px 12px; border-top: 1px solid var(--accent-dim); font: calc(10px * var(--fs)) var(--mono); color: var(--dim); }
+footer b { color: var(--blue); font-weight: 400; }
+#toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: var(--blue); color: #05060a; padding: 5px 12px; font: 700 calc(11px * var(--fs)) var(--mono); opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap; box-shadow: 0 0 12px rgba(95, 208, 255, .6); z-index: 5; }
+#toast.show { opacity: 1; }
+#hudtag { display: none; }
+
+/* ---------- HUD mode: background goes see-through (colour key), only the card floats over the game ---------- */
+body.hud #frame { background: var(--key); border-color: transparent; box-shadow: none; }
+body.hud #frame::before, body.hud #frame::after { display: none; }
+body.hud header, body.hud #searchbar, body.hud #results, body.hud footer, body.hud .hud-hide { display: none; }
+body.hud #hudtag { display: block; font: calc(10px * var(--fs)) var(--mono); color: var(--accent); letter-spacing: .12em; padding: 6px 12px 0; }
+body.hud main { overflow: hidden; }
+body.hud .card-h .name, body.hud .row .poi, body.hud .spot, body.hud .used, body.hud .spots, body.hud h3, body.hud .ptier, body.hud .crates, body.hud #hudtag, body.hud .note {
+  /* hard black outline so text stays readable over bright terrain */
+  text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 0 0 6px #000;
+}
+body.hud h3 { border-bottom-color: var(--accent); }
+body.hud .row { border-bottom: 0; }
+body.hud .spot { border-bottom: 0; }
+
+/* ---------- fit: nothing runs off the side; long words wrap ---------- */
+#frame, main, header, footer { min-width: 0; }
+main { overflow-x: hidden; overflow-wrap: anywhere; }
+header { gap: 8px; flex-wrap: wrap; }
+header .btns { display: flex; gap: 2px; margin-left: auto; }
+header .btn { font: calc(12px * var(--fs))/1 var(--mono); color: var(--accent); background: none; border: 1px solid var(--accent-dim); padding: 2px 7px; cursor: pointer; }
+header .btn:hover { color: var(--blue); border-color: var(--blue); }
+header .btn.quit:hover { color: var(--orange-hot); border-color: var(--orange-hot); }
+.row .top { flex-wrap: wrap; }
+footer { flex-wrap: wrap; row-gap: 2px; }
+.chip { white-space: normal; }
+#cardInner { transform-origin: top left; }
+.fit-dropped { display: none !important; }
+#fitmore { display: none; font: calc(10px * var(--fs)) var(--mono); color: var(--accent); }
+body.hud #fitmore.on { display: block; text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000; }
+.help table { border-collapse: collapse; width: 100%; font: calc(11.5px * var(--fs)) var(--mono); }
+.help td { padding: 3px 4px; border-bottom: 1px dashed var(--grid); vertical-align: top; }
+.help td.k { color: var(--blue); white-space: nowrap; }
+.warn { color: var(--orange); font: calc(11px * var(--fs)) var(--mono); margin: 4px 0; }
+.vok { color: var(--blue); font-weight: 700; cursor: help; }
+.vpart { color: var(--orange); font-weight: 700; cursor: help; }
+.b-tip { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 2px 4px; }
+.said { color: var(--text); font: italic calc(11.5px * var(--fs)) var(--mono); }
+.neg { color: var(--orange-hot); font: calc(10px * var(--fs)) var(--mono); }
+body.hud .said, body.hud .neg { text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000; }
+
+/* ---------- word wrap everywhere ---------- */
+#frame, #frame * { overflow-wrap: anywhere; word-break: normal; }
+.place-opt .pp, .crates, .chip { white-space: normal; }
+a.poi.spot { font: 600 calc(14px * var(--fs)) var(--tag); color: var(--text); border-bottom: 1px dotted var(--accent); }
+a.poi.spot:hover { color: var(--blue); border-color: var(--blue); }
+a.said { color: var(--text); font: italic calc(11.5px * var(--fs)) var(--mono); cursor: pointer; text-decoration: none; border-bottom: 1px dotted var(--blue-dim); }
+a.said:hover { color: var(--blue); border-color: var(--blue); }
+
+/* ---------- right-click menu ---------- */
+.ctx { display: none; position: fixed; z-index: 20; min-width: 150px; background: #07080d; border: 1px solid var(--accent); box-shadow: 0 0 14px rgba(var(--accent-rgb), .35); padding: 4px 0; }
+.ctx.open { display: block; }
+.ctx-item { padding: 5px 14px; font: calc(12px * var(--fs)) var(--mono); color: var(--text); cursor: pointer; white-space: nowrap; }
+.ctx-item:hover { background: #12202b; color: var(--blue); }
+.ctx-item.cur { color: var(--blue); }
+.ctx-sep { height: 1px; margin: 4px 8px; background: var(--accent-dim); }
+/* "Update available": footer link + menu item, quiet orange */
+footer a.upd { color: var(--orange); cursor: pointer; text-decoration: none; border-bottom: 1px dotted var(--orange); }
+footer a.upd:hover, .ctx-item.upd:hover { color: var(--blue); border-color: var(--blue); }
+.ctx-item.upd { color: var(--orange); }
+
+/* ---------- checklist ---------- */
+.clline { font: calc(12px * var(--fs)) var(--mono); color: var(--text); margin: 0 0 4px; }
+.need { color: var(--orange); font-weight: 700; }
+.ok { color: var(--blue); font-weight: 700; }
+.cl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 3.4em 4.6em; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px dashed var(--grid); }
+.cl-row.done .cl-name { opacity: .65; }
+.cl-name { font: calc(12.5px * var(--fs)) var(--tag); }
+.cl-have { display: inline-flex; align-items: center; gap: 2px; }
+.cbtn { width: calc(20px * var(--fs)); height: calc(20px * var(--fs)); padding: 0; background: #06070b; color: var(--blue); border: 1px solid var(--blue-dim); font: 700 calc(13px * var(--fs))/1 var(--mono); cursor: pointer; }
+.cbtn:hover { border-color: var(--blue); }
+.cnum { width: calc(2.8em * var(--fs)); text-align: center; background: #06070b; color: var(--text); border: 1px solid var(--accent-dim); font: calc(12px * var(--fs)) var(--mono); padding: 1px 2px; }
+.cnum:focus { outline: none; border-color: var(--blue); }
+.cl-need { font: calc(12px * var(--fs)) var(--mono); color: var(--dim); }
+.cl-st { font: calc(11px * var(--fs)) var(--mono); text-align: right; }
+.pl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 3px 0; border-bottom: 1px dashed var(--grid); }
+.pl-name { font: calc(12.5px * var(--fs)) var(--tag); }
+.pl-lvls { display: inline-flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.lvl { display: inline-block; padding: 1px 6px; border: 1px solid var(--accent-dim); color: var(--dim); font: calc(11px * var(--fs)) var(--mono); cursor: pointer; margin: 2px 0; }
+.lvl.on { border-color: var(--blue); color: var(--blue); }
+body.hud .clline, body.hud .need, body.hud .ok, body.hud .cl-name, body.hud .cl-need { text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000; }
+body.hud .cl-have .cbtn { display: none; }
+body.hud .cnum { border: 0; background: transparent; width: auto; }
+
+
+/* pinned over the game: purple accent (brighter than the old #b45cff so it stays readable), so pinned vs searching is obvious */
+body.hud { --accent: #b98cff; --accent-dim: #7a5bb8; --accent-rgb: 185, 140, 255; }

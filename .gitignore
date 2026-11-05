@@ -1,0 +1,5 @@
+dist/
+source/shell/.venv/
+__pycache__/
+*.pyc
+source/data/

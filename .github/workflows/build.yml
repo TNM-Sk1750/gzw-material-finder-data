@@ -1,0 +1,65 @@
+# Builds the public zip on GitHub's own Windows machine from the code in source/ and attaches it to the release,
+# so the download is made from exactly what you can read in this repo. Run from the Actions tab ("Run workflow").
+# Every zip gets a signed build attestation: `gh attestation verify <zip> --repo TNM-Sk1750/gzw-material-finder-data`
+# proves it came from this workflow and this commit.
+name: Build release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. 1.3.0 (must match APP_VERSION in source/shell/datasync.py)'
+        required: true
+
+permissions:
+  contents: write      # attach the zip to the release
+  id-token: write      # sign the build attestation
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+
+      - name: Install the app's packages (pinned)
+        shell: pwsh
+        run: |
+          python -m venv source/shell/.venv
+          source/shell/.venv/Scripts/python.exe -m pip install --disable-pip-version-check -r source/requirements.txt
+
+      - name: Build the zip
+        shell: pwsh
+        run: source/shell/.venv/Scripts/python.exe source/build.py "${{ inputs.version }}"
+
+      - name: Self-test the built app (hidden window)
+        shell: pwsh
+        working-directory: dist/GZW-Material-Finder-public
+        run: |
+          ./runtime/python.exe -E -s shell/finder.py --selftest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/GZW-Material-Finder-public-${{ inputs.version }}.zip
+
+      - name: Attach to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v${{ inputs.version }}"
+          $zip = "dist/GZW-Material-Finder-public-${{ inputs.version }}.zip"
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --prerelease --title "GZW Material Finder ${{ inputs.version }}" --notes "Built by GitHub Actions."
+          }
+          gh release upload $tag $zip --clobber
+          "zip: $zip" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          "sha256: $sha" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          "workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" | Out-File -Append $env:GITHUB_STEP_SUMMARY

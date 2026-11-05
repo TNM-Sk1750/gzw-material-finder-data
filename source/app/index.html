@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GZW Material Finder</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="frame">
+    <header class="pywebview-drag-region">
+      <span class="title">GZW // MATERIAL FINDER</span>
+      <span id="hk" class="muted"></span>
+      <span class="btns">
+        <button class="btn" id="b-help" title="Hotkeys (F1)">?</button>
+        <button class="btn" id="b-hide" title="Hide">_</button>
+        <button class="btn quit" id="b-quit" title="Shut down the finder">✕</button>
+      </span>
+    </header>
+    <div id="searchbar">
+      <input id="q" type="text" autocomplete="off" spellcheck="false" placeholder="Search a material or station…" />
+    </div>
+    <div id="results"></div>
+    <div id="hudtag"></div>
+    <main id="card"></main>
+    <div id="fitmore"></div>
+    <footer>
+      <span id="foot" class="muted"></span>
+      <span id="keys" class="keys muted"></span>
+    </footer>
+    <div id="toast"></div>
+    <div id="ctx" class="ctx"></div>
+  </div>
+  <script src="data/gzw_data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
