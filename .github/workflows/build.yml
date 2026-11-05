@@ -45,6 +45,7 @@ jobs:
           $out
           $fails = $out -split "`n" | Where-Object { $_ -match '^FAIL' -and $_ -notmatch 'steam build id' }
           if ($fails -or $out -notmatch 'PASS') { "unexpected failures:"; $fails; exit 1 }
+          exit 0  # the self-test's own exit code counts the allowed Steam failure
 
       - uses: actions/attest-build-provenance@v2
         with:
