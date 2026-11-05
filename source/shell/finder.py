@@ -678,6 +678,12 @@ def selftest():
     cfg = load_config(Path(arg('--config') or CONFIG))
     save_config(cfg, cfg_path)  # all changes go to a throwaway copy, not your real config
     shell = Shell(cfg, config_path=cfg_path, dry=True)
+
+    def saved_lang():  # the copy may be mid-write when we look; that's just "not yet"
+        try:
+            return json.loads(cfg_path.read_text(encoding='utf-8')).get('language')
+        except (ValueError, OSError):
+            return None
     finds_file = DATA / 'selftest_finds.jsonl'
     checklist_file = DATA / 'selftest_checklist.json'
     finds_file.unlink(missing_ok=True)
@@ -763,7 +769,7 @@ def selftest():
             window.evaluate_js("window.GZW.setLang('de'); window.GZW.showHelp()")
             saved = None
             for _ in range(50):
-                saved = json.loads(cfg_path.read_text(encoding='utf-8')).get('language')
+                saved = saved_lang()
                 if saved == 'de':
                     break
                 time.sleep(0.1)
@@ -774,7 +780,7 @@ def selftest():
                   f'config={saved} page={page}')
             window.evaluate_js("window.GZW.setLang('en'); window.GZW.showHelp()")
             for _ in range(50):
-                saved = json.loads(cfg_path.read_text(encoding='utf-8')).get('language')
+                saved = saved_lang()
                 if saved == 'en':
                     break
                 time.sleep(0.1)
