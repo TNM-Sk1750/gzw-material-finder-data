@@ -40,8 +40,11 @@ jobs:
         shell: pwsh
         working-directory: dist/GZW-Material-Finder-public
         run: |
-          ./runtime/python.exe -E -s shell/finder.py --selftest
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # GitHub's machine has no Steam / GZW installed, so the "steam build id" check is the one allowed to fail
+          $out = ./runtime/python.exe -E -s shell/finder.py --selftest 2>&1 | Out-String
+          $out
+          $fails = $out -split "`n" | Where-Object { $_ -match '^FAIL' -and $_ -notmatch 'steam build id' }
+          if ($fails -or $out -notmatch 'PASS') { "unexpected failures:"; $fails; exit 1 }
 
       - uses: actions/attest-build-provenance@v2
         with:
