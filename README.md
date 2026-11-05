@@ -8,6 +8,8 @@ players report finding it, plus have/need checklists for hideout upgrades, recip
 
 Not affiliated with MADFINGER Games or GZW Tac Map.
 
+![The hideout checklist open next to the in-game locker](docs/screenshot.png)
+
 ## Is it safe?
 
 You don't have to take my word for it:
