@@ -74,7 +74,9 @@ DEFAULT_CONFIG = {
     'hud_click_through': True,
     'refresh_hours': 24,
     'steam_appmanifest': None,  # None = find it via Steam's library folders
+    'language': 'en',  # 'en' or 'de' (right-click menu > Language); texts and names are in app/lang.js
 }
+LANGUAGES = ('en', 'de')
 LIMITS = {'opacity': (0.2, 1.0, 0.05), 'text_scale': (0.7, 2.0, 0.1), 'width': (300, 1600), 'height': (320, 2000)}
 
 user32 = ctypes.WinDLL('user32', use_last_error=True)
@@ -137,6 +139,8 @@ def load_config(path=CONFIG):
         user['config_version'] = CONFIG_VERSION
         cfg['hotkeys'].update(user.pop('hotkeys', {}) or {})
         cfg.update(user)
+    if cfg.get('language') not in LANGUAGES:
+        cfg['language'] = 'en'
     cfg['config_version'] = CONFIG_VERSION
     save_config(cfg, path)  # writes new keys into an older config
     return cfg
@@ -229,7 +233,17 @@ class Api:
         keys = {a: (s.hotkeys.spec_for(a) if s.hotkeys else None) for a in DEFAULT_HOTKEYS}
         return {'build': s.build, 'hotkey': keys['toggle'], 'keys': keys, 'hotkey_errors': s.hotkeys.errors if s.hotkeys else [],
                 'text_scale': s.cfg['text_scale'], 'mode': s.mode, 'edition': s.edition, 'app_version': APP_VERSION,
-                'update': feed.update_info(), 'share_url': feed.load_config()['share_url']}
+                'update': feed.update_info(), 'share_url': feed.load_config()['share_url'], 'language': s.cfg.get('language', 'en')}
+
+    def set_language(self, lang):
+        """Right-click menu > Language: saved to config.json; the page redraws itself (no restart)."""
+        if lang not in LANGUAGES:
+            return False
+        s = self._shell
+        with s._lock:
+            s.cfg['language'] = lang
+            save_config(s.cfg, s.config_path)
+        return True
 
     def get_data(self):
         """The newest valid data for the page, as a parsed JSON object (None = keep the bundled gzw_data.js).
@@ -344,8 +358,9 @@ class Shell:
             log('js failed: ' + code[:80] + '\n' + traceback.format_exc())
             return None
 
-    def toast(self, msg):
-        self.js(f'window.gzwToast && window.gzwToast({json.dumps(msg)})')
+    def toast(self, msg, key=None, **values):
+        """msg in English; with a key (app/lang.js 'toast.*') the page shows it in the current language instead."""
+        self.js(f'window.gzwToast && window.gzwToast({json.dumps(msg)}, {json.dumps(key)}, {json.dumps(values)})')
 
     # ---------- hotkey actions ----------
     def do(self, action):
@@ -364,14 +379,15 @@ class Shell:
             elif action in ('less_see_through', 'more_see_through'):
                 which = 'hud' if self.mode == 'hud' else 'active'
                 v = self.adjust_opacity(which, 1 if action == 'less_see_through' else -1)
-                self.toast(f'{"HUD" if which == "hud" else "Panel"} opacity {round(v * 100)}%')
+                self.toast(f'{"HUD" if which == "hud" else "Panel"} opacity {round(v * 100)}%',
+                           'toast.opacityHud' if which == 'hud' else 'toast.opacityPanel', n=round(v * 100))
             elif action in ('bigger_text', 'smaller_text'):
                 lo, hi, step = LIMITS['text_scale']
                 v = round(min(hi, max(lo, self.cfg['text_scale'] + (step if action == 'bigger_text' else -step))), 2)
                 self.cfg['text_scale'] = v
                 save_config(self.cfg, self.config_path)
                 self.js(f'window.gzwTextScale && window.gzwTextScale({v})')
-                self.toast(f'Text {round(v * 100)}%')
+                self.toast(f'Text {round(v * 100)}%', 'toast.text', n=round(v * 100))
             elif action in ('taller', 'shorter'):
                 self.resize(1, 1.1 if action == 'taller' else 1 / 1.1)
             elif action in ('wider', 'narrower'):
@@ -388,7 +404,7 @@ class Shell:
         self.cfg['width'], self.cfg['height'] = w, h
         save_config(self.cfg, self.config_path)
         self.set_size(w, h)
-        self.toast(f'Window {w}×{h}')
+        self.toast(f'Window {w}×{h}', 'toast.window', w=w, h=h)
         self.js('window.gzwFit && setTimeout(window.gzwFit, 60)')
 
     def set_size(self, w, h):
@@ -742,6 +758,28 @@ def selftest():
                     break
                 time.sleep(0.1)
             check('checklist saves and loads (test file only)', state == 'ok:4:1' and checklist_file.exists(), state)
+
+            # language: the menu's switch saves to the (test) config and the page redraws in German, no restart
+            window.evaluate_js("window.GZW.setLang('de'); window.GZW.showHelp()")
+            saved = None
+            for _ in range(50):
+                saved = json.loads(cfg_path.read_text(encoding='utf-8')).get('language')
+                if saved == 'de':
+                    break
+                time.sleep(0.1)
+            page = window.evaluate_js("[document.querySelector('#cardInner .name').textContent, document.getElementById('q').placeholder,"
+                                      " window.GZW.search('wasserpumpe')[0].id, window.GZW.search('water pump')[0].id]")
+            check('language: German saved to config, page in German, search finds German + English names',
+                  saved == 'de' and shell.cfg['language'] == 'de' and page == ['Tastenkürzel', 'Material oder Station suchen…', 'waterpump', 'waterpump'],
+                  f'config={saved} page={page}')
+            window.evaluate_js("window.GZW.setLang('en'); window.GZW.showHelp()")
+            for _ in range(50):
+                saved = json.loads(cfg_path.read_text(encoding='utf-8')).get('language')
+                if saved == 'en':
+                    break
+                time.sleep(0.1)
+            page = window.evaluate_js("document.querySelector('#cardInner .name').textContent")
+            check('language: back to English', saved == 'en' and page == 'Hotkeys', f'config={saved} page={page}')
 
             shell.setup_form()
             shell.apply_mode_styles('hud')

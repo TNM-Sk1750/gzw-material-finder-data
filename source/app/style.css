@@ -131,8 +131,11 @@ body.hud #fitmore.on { display: block; text-shadow: 1px 0 0 #000, -1px 0 0 #000,
 .vpart { color: var(--orange); font-weight: 700; cursor: help; }
 .b-tip { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 2px 4px; }
 .said { color: var(--text); font: italic calc(11.5px * var(--fs)) var(--mono); }
+/* German mode: the English name, small and muted after the German one */
+.en { color: var(--dim); font: 400 calc(10px * var(--fs)) var(--mono); text-transform: none; letter-spacing: normal; text-shadow: none; }
+html[lang="de"] .card-h { flex-wrap: wrap; } /* a long German name pushes the category to the next line instead of squeezing it */
 .neg { color: var(--orange-hot); font: calc(10px * var(--fs)) var(--mono); }
-body.hud .said, body.hud .neg { text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000; }
+body.hud .said, body.hud .neg, body.hud .en { text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000; }
 
 /* ---------- word wrap everywhere ---------- */
 #frame, #frame * { overflow-wrap: anywhere; word-break: normal; }

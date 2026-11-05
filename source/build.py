@@ -152,7 +152,7 @@ def copy_runtime(rt):
 def check(out):
     """Refuse to zip a build that is missing a piece."""
     py_dll = f'python{sys.version_info.major}{sys.version_info.minor}.dll'
-    need = ['runtime/pythonw.exe', f'runtime/{py_dll}', 'runtime/vcruntime140.dll', 'app/data/gzw_data.js',
+    need = ['runtime/pythonw.exe', f'runtime/{py_dll}', 'runtime/vcruntime140.dll', 'app/data/gzw_data.js', 'app/lang.js',
             'shell/finder.py', 'runtime/Lib/site-packages/webview/__init__.py', 'runtime/Lib/site-packages/clr_loader/__init__.py']
     missing = [f for f in need if not (out / f).is_file()]
     if missing:
@@ -165,7 +165,7 @@ def main():
         raise SystemExit(f'version mismatch: asked for {want}, the code says {datasync.APP_VERSION}')
     out = DIST / NAME
     shutil.rmtree(out, ignore_errors=True)
-    for f in ['index.html', 'style.css', 'app.js']:
+    for f in ['index.html', 'style.css', 'lang.js', 'app.js']:
         (out / 'app' / 'data').mkdir(parents=True, exist_ok=True)
         shutil.copy2(SRC / 'app' / f, out / 'app' / f)
     data = json.loads((REPO / 'gzw_data.json').read_text(encoding='utf-8'))

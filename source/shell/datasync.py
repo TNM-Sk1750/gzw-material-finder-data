@@ -24,7 +24,7 @@ import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-APP_VERSION = '1.3.0'  # bump on every release, and before publishing changed seed data (see publish.py)
+APP_VERSION = '1.4.0'  # bump on every release, and before publishing changed seed data (see publish.py)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / 'data'
@@ -551,6 +551,10 @@ def build_data(public=False, tac=True, contribs=None, repo=None):
     dis_seed = read_json(SEED_DIR / 'disassembly_seed.json')
     if dis_seed:
         seeds.append((dis_seed, 'X:'))
+    # in-game names (data/seed/ingame_names.json): locker short names as search aliases, items seen in game
+    ingame = read_json(SEED_DIR / 'ingame_names.json')
+    if ingame:
+        seeds.append((ingame, 'G:'))
 
     sources, remap = canonicalize_sources(seeds)
     # claims whose source IS TAC map (e.g. its crate layer's search aliases) are TAC data too
