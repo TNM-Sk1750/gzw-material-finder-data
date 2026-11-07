@@ -24,7 +24,7 @@ import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-APP_VERSION = '1.4.0'  # bump on every release, and before publishing changed seed data (see publish.py)
+APP_VERSION = '1.4.1'  # bump on every release, and before publishing changed seed data (see publish.py)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / 'data'
@@ -112,17 +112,26 @@ def now_iso():
 
 
 def read_json(path, default=None):
+    """Parsed JSON, or default if the file is missing, broken, or (with a default) holds a different type than the default."""
     try:
-        return json.loads(Path(path).read_text(encoding='utf-8'))
+        value = json.loads(Path(path).read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return default
+    return default if default is not None and not isinstance(value, type(default)) else value
 
 
 def write_json(path, obj, indent=None):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(str(path) + '.tmp')
     tmp.write_text(json.dumps(obj, indent=indent, ensure_ascii=False), encoding='utf-8')
-    tmp.replace(path)  # atomic: a crash never leaves half a file
+    for attempt in range(20):
+        try:
+            tmp.replace(path)  # atomic: a crash never leaves half a file
+            return
+        except PermissionError:  # Windows refuses while anything has the file open (antivirus, a reader): wait up to 1 s
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
 
 
 def http_get(url, timeout=30, cap=None):
@@ -298,7 +307,7 @@ def add_player_reports(materials, mat_by_norm, sources):
                                if not (h.get('kind') == 'named' and clean((sources.get(h.get('src')) or {}).get('url')) in harvested)]
     url_key = {clean(v.get('url')): k for k, v in sources.items() if v.get('url')}
     used, skipped, authors = 0, 0, set()
-    for i, r in enumerate(reports):
+    for r in reports:
         m = mat_by_norm.get(norm(r.get('material')))
         if not m or not r.get('url'):
             skipped += 1
@@ -332,11 +341,12 @@ def add_player_reports(materials, mat_by_norm, sources):
 
 # ---------- finds shared by maintainers (contrib/<name>.json in the public repo, see publish.py) ----------
 CONTRIB_NAME = re.compile(r'^[A-Za-z0-9_.-]{1,40}$')
+CONTRIB_MAX = 5000  # finds in one contrib file
 
 
 def clean_contrib(doc):
     """One contrib file -> sorted list of {material, poi, date[, place]}, or None if it isn't one. Nothing else survives."""
-    if not isinstance(doc, dict) or not isinstance(doc.get('finds'), list) or len(doc['finds']) > 5000:
+    if not isinstance(doc, dict) or not isinstance(doc.get('finds'), list) or len(doc['finds']) > CONTRIB_MAX:
         return None
     out = []
     for f in doc['finds']:
@@ -742,7 +752,6 @@ def check_sources(state, max_urls=15):
     srcs, cites = {}, {}
     for name in ('starter_seed.json', 'research_seed.json', 'crafting_seed.json'):
         seed = read_json(SEED_DIR / name) or {}
-        prefix = 'R:' if name.startswith('research') else ''
         blob = json.dumps(seed.get('materials', [])) + json.dumps(seed.get('stations', []))
         for k, v in (seed.get('sources') or {}).items():
             url = v.get('url', '')

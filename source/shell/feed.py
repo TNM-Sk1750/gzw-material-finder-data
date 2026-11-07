@@ -34,9 +34,12 @@ def valid_base(url):
     """https only - plain http is allowed for a local test server and nothing else."""
     if not isinstance(url, str) or len(url) > 300:
         return None
-    u = urlparse(url)
-    local = u.scheme == 'http' and u.hostname in ('127.0.0.1', 'localhost')
-    return url.rstrip('/') if (u.scheme == 'https' or local) and u.hostname else None
+    try:
+        u = urlparse(url)
+        local = u.scheme == 'http' and u.hostname in ('127.0.0.1', 'localhost')
+        return url.rstrip('/') if (u.scheme == 'https' or local) and u.hostname else None
+    except ValueError:  # not a URL at all, e.g. an unclosed [ in the host
+        return None
 
 
 def https_url(url):
@@ -118,14 +121,18 @@ def validate_data(d):
             need(r is None or (isinstance(r.get('type'), str) and opt(r.get('author'), str)), 'player report')
         for u in m['used_in']:
             need(isinstance(u.get('station'), str) and opt(u.get('device'), str) and opt(u.get('level'), int)
-                 and opt(u.get('qty'), num) and opt(u.get('craft'), str), 'used_in')
+                 and opt(u.get('qty'), num) and opt(u.get('craft'), str) and opt(u.get('src'), str), 'used_in')
         for d_ in m.get('dismantle_from') or []:
-            need(isinstance(d_.get('item'), str), 'dismantle_from')
+            need(isinstance(d_.get('item'), str) and opt(d_.get('src'), str), 'dismantle_from')
+        for c in m.get('crate') or []:
+            need(opt(c.get('src'), str), 'crate')
         for n in m.get('negatives') or []:
-            need(isinstance(n.get('report'), dict) and opt(n.get('poi'), str) and opt(n.get('spot'), str), 'negative report')
+            need(isinstance(n.get('report'), dict) and opt(n.get('poi'), str) and opt(n.get('spot'), str) and opt(n.get('src'), str), 'negative report')
     for s in d['stations']:
         need(isinstance(s.get('station'), str) and opt(s.get('room'), str) and opt(s.get('device'), str) and opt(s.get('level'), int)
-             and (s.get('conflicts') is None or isinstance(s['conflicts'], list))
+             and opt(s.get('src'), str)
+             and (s.get('conflicts') is None or (isinstance(s['conflicts'], list)
+                                                 and all(isinstance(c, str) or (isinstance(c, dict) and opt(c.get('src'), str)) for c in s['conflicts'])))
              and (s.get('cost') is None or (dicts(s['cost']) and all(isinstance(c.get('material'), str) and opt(c.get('qty'), num)
                                                                      for c in s['cost']))), 'station')
     for r in d['recipes']:
@@ -150,7 +157,7 @@ def validate_data(d):
              and dicts(v.get('hints')) and all(isinstance(h.get('text'), str) and all(opt(h.get(k), str) for k in ('poi', 'src', 'author'))
                                               for h in v['hints']), 'device')
     for t in d['general_tips']:
-        need(isinstance(t.get('text'), str), 'general tip')
+        need(isinstance(t.get('text'), str) and opt(t.get('src'), str), 'general tip')
 
 
 # ---------- what we have ----------
@@ -186,7 +193,9 @@ def pick(ed):
 
 def update_info():
     """{'latest', 'url'} when the feed says a newer app is out (and gave an https download page), else None."""
-    latest = (read_json(STATE, {}) or {}).get('latest') or {}
+    latest = (read_json(STATE, {}) or {}).get('latest')
+    if not isinstance(latest, dict):
+        return None
     lv, url = version_tuple(latest.get('app_latest')), https_url(latest.get('release_page'))
     return {'latest': latest['app_latest'], 'url': url} if lv and url and lv > version_tuple(APP_VERSION) else None
 

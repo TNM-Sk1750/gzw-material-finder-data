@@ -85,8 +85,6 @@ user32.RegisterHotKey.argtypes = [wt.HWND, ctypes.c_int, wt.UINT, wt.UINT]
 user32.UnregisterHotKey.argtypes = [wt.HWND, ctypes.c_int]
 user32.GetMessageW.argtypes = [ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT]
 user32.PostThreadMessageW.argtypes = [wt.DWORD, wt.UINT, wt.WPARAM, wt.LPARAM]
-user32.FindWindowW.argtypes = [wt.LPCWSTR, wt.LPCWSTR]
-user32.FindWindowW.restype = wt.HWND
 user32.GetForegroundWindow.restype = wt.HWND
 user32.SetForegroundWindow.argtypes = [wt.HWND]
 user32.IsWindow.argtypes = [wt.HWND]
@@ -115,20 +113,40 @@ def log(msg):
         f.write(f'{datetime.now():%Y-%m-%d %H:%M:%S} {msg}\n')
 
 
+def clean_numbers(cfg):
+    """config.json can be edited by hand: a value of the wrong type goes back to its default, a number out of range to the nearest allowed one."""
+    ranges = {'width': LIMITS['width'], 'height': LIMITS['height'], 'opacity_active': LIMITS['opacity'][:2], 'opacity_hud': LIMITS['opacity'][:2],
+              'text_scale': LIMITS['text_scale'][:2], 'refresh_hours': (0, 87600), 'x': (-100000, 100000), 'y': (-100000, 100000)}
+    for key, (lo, hi) in ranges.items():
+        v = cfg.get(key)
+        cfg[key] = min(hi, max(lo, v)) if type(v) in (int, float) and v == v else DEFAULT_CONFIG[key]
+    cfg['width'], cfg['height'] = int(cfg['width']), int(cfg['height'])
+
+
 def load_config(path=CONFIG):
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
     if path.exists():
         try:
             user = json.loads(path.read_text(encoding='utf-8'))
-        except Exception as e:  # bad JSON - keep defaults, but say so
-            log(f'{path.name} unreadable ({e}); using defaults')
+            if not isinstance(user, dict):
+                raise ValueError('not a settings object')
+        except Exception as e:  # bad JSON - keep defaults, but say so, and keep the file: the next save would replace it
+            bad = path.with_name(path.name + '.bad')
+            log(f'{path.name} unreadable ({e}); using defaults, the broken file is kept as {bad.name}')
+            try:
+                path.replace(bad)
+            except OSError as e2:
+                log(f'could not keep {bad.name}: {e2}')
             return cfg
         if 'hotkey' in user and 'hotkeys' not in user:  # v1 config had a single hotkey
             user['hotkeys'] = {'toggle': user['hotkey']}
         user.pop('hotkey', None)
+        if not isinstance(user.get('hotkeys'), dict):
+            user.pop('hotkeys', None)
         if user.get('steam_appmanifest') == r'C:\Program Files (x86)\Steam\steamapps\appmanifest_2479810.acf':
             user['steam_appmanifest'] = None  # v1 hard-coded default -> auto-detect
-        if (user.get('config_version') or 2) < 3:
+        version = user.get('config_version')
+        if (version if type(version) is int else 2) < 3:
             # drop the v2 default bindings that moved; keys the user changed themselves are kept
             hk = user.get('hotkeys') or {}
             for action, old in V2_MOVED.items():
@@ -141,17 +159,31 @@ def load_config(path=CONFIG):
         cfg.update(user)
     if cfg.get('language') not in LANGUAGES:
         cfg['language'] = 'en'
+    clean_numbers(cfg)
     cfg['config_version'] = CONFIG_VERSION
-    save_config(cfg, path)  # writes new keys into an older config
+    try:
+        save_config(cfg, path)  # writes new keys into an older config
+    except OSError as e:  # a read-only file or folder must not stop the app from starting
+        log(f'could not save {path.name}: {e}')
     return cfg
 
 
+_save_lock = threading.Lock()  # the hotkey, page and quit threads can all save at once
+
+
 def save_config(cfg, path=CONFIG):
-    path.parent.mkdir(parents=True, exist_ok=True)  # the public package ships without a data/ folder
-    path.write_text(json.dumps(cfg, indent=2), encoding='utf-8')
+    with _save_lock:
+        datasync.write_json(path, cfg, indent=2)  # creates the folder too: the public package ships without a data/ folder
+
+
+def key_specs(specs):
+    """A hotkeys entry of config.json as a list: one key, several, or none (null)."""
+    return specs if isinstance(specs, list) else [specs] if specs else []
 
 
 def parse_hotkey(spec):
+    if not isinstance(spec, str):
+        raise ValueError(f'hotkey {spec!r} is not text')
     mods, vk = 0, None
     parts = [p.strip().lower() for p in re.split(r'\+(?=.)', spec) if p.strip()]
     for part in parts:
@@ -185,7 +217,7 @@ class Hotkeys(threading.Thread):
         self.tid = kernel32.GetCurrentThreadId()
         next_id = 1
         for action, specs in self.bindings.items():
-            for spec in ([specs] if isinstance(specs, str) else specs or []):
+            for spec in key_specs(specs):
                 try:
                     mods, vk = parse_hotkey(spec)
                 except ValueError as e:
@@ -217,6 +249,23 @@ class Hotkeys(threading.Thread):
     def stop(self):
         if self.tid:
             user32.PostThreadMessageW(self.tid, WM_QUIT, 0, 0)
+
+
+def checklist_section(s):
+    """One section of the checklist as the page expects it: {have: {id: count}, plan: [keys]}. Anything else is dropped."""
+    s = s if isinstance(s, dict) else {}
+    have, plan = s.get('have'), s.get('plan')
+    return {'have': {str(k): max(0, int(v)) for k, v in (have.items() if isinstance(have, dict) else ())
+                     if type(v) is int or (isinstance(v, str) and re.fullmatch(r'-?[0-9]{1,9}', v))},
+            'plan': [p for p in plan if isinstance(p, str)][:200] if isinstance(plan, list) else []}
+
+
+def clean_checklist(data):
+    clean = checklist_section(data)
+    data = data if isinstance(data, dict) else {}
+    clean['craft'] = checklist_section(data.get('craft'))  # the craft checklist: its own have counts and planned recipes
+    clean['disassembly'] = checklist_section(data.get('disassembly'))  # disassembly checklist: parts you have / parts you want
+    return clean
 
 
 class Api:
@@ -255,11 +304,13 @@ class Api:
         if not self._finds.exists():
             return []
         out = []
-        for line in self._finds.read_text(encoding='utf-8').splitlines():
+        for line in self._finds.read_text(encoding='utf-8', errors='replace').splitlines():
             try:
-                out.append(json.loads(line))
+                find = json.loads(line)
             except json.JSONDecodeError:
-                pass  # a half-written line shouldn't lose the rest
+                continue  # a half-written line shouldn't lose the rest
+            if isinstance(find, dict):  # the page reads find.material on every card
+                out.append(find)
         return out
 
     def log_find(self, find):
@@ -268,8 +319,10 @@ class Api:
         find.setdefault('build', self._shell.build)
         with self._lock:
             self._finds.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._finds, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(find, ensure_ascii=False) + '\n')
+            with open(self._finds, 'ab+') as f:
+                if f.seek(0, 2) and (f.seek(-1, 2), f.read(1))[1] != b'\n':
+                    f.write(b'\n')  # the last line has no line end (edited by hand, or cut off): don't run on from it
+                f.write(json.dumps(find, ensure_ascii=False).encode('utf-8') + b'\n')
         return True
 
     def open_url(self, url):
@@ -282,33 +335,17 @@ class Api:
     # Checklist: what you have + which station upgrades you're building (data/checklist.json)
     def get_checklist(self):
         try:
-            return json.loads(self._checklist.read_text(encoding='utf-8'))
+            return clean_checklist(json.loads(self._checklist.read_text(encoding='utf-8')))
         except (OSError, ValueError):
-            return {'have': {}, 'plan': []}
+            return clean_checklist(None)
 
     def save_checklist(self, data):
         if not isinstance(data, dict):
             raise ValueError('checklist must be an object')
-        def section(s):
-            s = s if isinstance(s, dict) else {}
-            return {'have': {str(k): max(0, int(v)) for k, v in (s.get('have') or {}).items() if str(v).lstrip('-').isdigit()},
-                    'plan': [str(p) for p in (s.get('plan') or [])][:200]}
-        clean = section(data)
-        clean['craft'] = section(data.get('craft'))  # the craft checklist: its own have counts and planned recipes
-        clean['disassembly'] = section(data.get('disassembly'))  # disassembly checklist: parts you have / parts you want
+        clean = clean_checklist(data)
         with self._lock:
-            self._checklist.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._checklist.with_suffix('.tmp')
-            tmp.write_text(json.dumps(clean, indent=1), encoding='utf-8')
-            tmp.replace(self._checklist)
+            datasync.write_json(self._checklist, clean, indent=1)
         return True
-
-    def action(self, name):
-        """Same actions as the hotkeys, for in-window keys and buttons."""
-        if name in DEFAULT_HOTKEYS:
-            threading.Thread(target=self._shell.do, args=(name,), daemon=True).start()
-            return True
-        return False
 
     def pin(self):
         self._shell.pin()
@@ -339,7 +376,11 @@ class Shell:
         self._quitting = False
 
     def hwnd(self):
-        return user32.FindWindowW(None, TITLE)
+        """Our own window. Never look it up by title: that can find another copy's window (the running app during a self-test)."""
+        try:
+            return self.window.native.Handle.ToInt64()
+        except Exception:  # no window yet, or it has closed
+            return None
 
     def _ui(self, fn):
         """Run fn(form) on the WinForms UI thread."""
@@ -569,7 +610,7 @@ class Shell:
         publisher (hourly at most, off without a token). Other maintainers' new finds rebuild the local data too."""
         while not self._quitting:
             try:
-                rebuilt, msg = datasync.sync(refresh_hours=float(self.cfg.get('refresh_hours', 24)))
+                rebuilt = datasync.sync(refresh_hours=float(self.cfg.get('refresh_hours', 24)))[0]
                 if publish:
                     if publish.run(self.cfg, self.finds_file)['contribs_changed']:
                         log('sync: ' + datasync.build())
@@ -698,7 +739,7 @@ def selftest():
     shell.hotkeys = Hotkeys(cfg['hotkeys'], shell.do)
     shell.hotkeys.start()
     shell.hotkeys.ready.wait(5)
-    want = sum(1 for v in cfg['hotkeys'].values() for _ in ([v] if isinstance(v, str) else v))
+    want = sum(len(key_specs(v)) for v in cfg['hotkeys'].values())
     check(f'all {want} hotkeys registered', len(shell.hotkeys.ok) == want, '; '.join(shell.hotkeys.errors))
     check('steam build id found', shell.build is not None, shell.build)
 
@@ -765,28 +806,6 @@ def selftest():
                 time.sleep(0.1)
             check('checklist saves and loads (test file only)', state == 'ok:4:1' and checklist_file.exists(), state)
 
-            # language: the menu's switch saves to the (test) config and the page redraws in German, no restart
-            window.evaluate_js("window.GZW.setLang('de'); window.GZW.showHelp()")
-            saved = None
-            for _ in range(50):
-                saved = saved_lang()
-                if saved == 'de':
-                    break
-                time.sleep(0.1)
-            page = window.evaluate_js("[document.querySelector('#cardInner .name').textContent, document.getElementById('q').placeholder,"
-                                      " window.GZW.search('wasserpumpe')[0].id, window.GZW.search('water pump')[0].id]")
-            check('language: German saved to config, page in German, search finds German + English names',
-                  saved == 'de' and shell.cfg['language'] == 'de' and page == ['Tastenkürzel', 'Material oder Station suchen…', 'waterpump', 'waterpump'],
-                  f'config={saved} page={page}')
-            window.evaluate_js("window.GZW.setLang('en'); window.GZW.showHelp()")
-            for _ in range(50):
-                saved = saved_lang()
-                if saved == 'en':
-                    break
-                time.sleep(0.1)
-            page = window.evaluate_js("document.querySelector('#cardInner .name').textContent")
-            check('language: back to English', saved == 'en' and page == 'Hotkeys', f'config={saved} page={page}')
-
             shell.setup_form()
             shell.apply_mode_styles('hud')
             hwnd = shell.hwnd()
@@ -813,6 +832,28 @@ def selftest():
             h0 = cfg['height']
             check('hotkey: wider (width only)', press('wider') and cfg['width'] > w0 and cfg['height'] == h0, f"{w0}x{h0} -> {cfg['width']}x{cfg['height']}")
             check('hotkey: narrower', press('narrower') and abs(cfg['width'] - w0) <= 2 and cfg['height'] == h0, f"{cfg['width']}x{cfg['height']}")
+            # language: the menu's switch saves to the (test) config and the page redraws in German, no restart
+            window.evaluate_js("window.GZW.setLang('de'); window.GZW.showHelp()")
+            saved = None
+            for _ in range(50):
+                saved = saved_lang()
+                if saved == 'de':
+                    break
+                time.sleep(0.1)
+            page = window.evaluate_js("[document.querySelector('#cardInner .name').textContent, document.getElementById('q').placeholder,"
+                                      " window.GZW.search('wasserpumpe')[0].id, window.GZW.search('water pump')[0].id]")
+            check('language: German saved to config, page in German, search finds German + English names',
+                  saved == 'de' and shell.cfg['language'] == 'de' and page == ['Tastenkürzel', 'Material oder Station suchen…', 'waterpump', 'waterpump'],
+                  f'config={saved} page={page}')
+            window.evaluate_js("window.GZW.setLang('en'); window.GZW.showHelp()")
+            for _ in range(50):
+                saved = saved_lang()
+                if saved == 'en':
+                    break
+                time.sleep(0.1)
+            page = window.evaluate_js("document.querySelector('#cardInner .name').textContent")
+            check('language: back to English', saved == 'en' and page == 'Hotkeys', f'config={saved} page={page}')
+
             check('hotkey: hide dispatched', press('hide'))
             check('saved settings went to the test copy only', json.loads(cfg_path.read_text(encoding='utf-8'))['text_scale'] == ts0)
             check('window stayed hidden', shell.mode == 'hidden' and not user32.IsWindowVisible(hwnd))

@@ -4,7 +4,9 @@
 // The public edition's data has no TAC map spots (D.places empty): no crate lines or crate guesses, area-level links only.
 (() => {
   'use strict';
-  let D = window.GZW_DATA;
+  // no usable gzw_data.js: start empty, so the window, menu and hotkeys still work and a verified download can fill it
+  const NO_DATA = { meta: {}, sources: {}, pois: [], places: [], crates: [], disassembly: [], materials: [], stations: [], recipes: [], devices: [], crateFacts: [], general_tips: [] };
+  let D = window.GZW_DATA || NO_DATA;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // lower case, accents dropped (ü -> u, ß -> ss), so German names match whether or not you type the umlaut
@@ -45,8 +47,8 @@
     matById = new Map(D.materials.map((m) => [m.id, m]));
     matByNorm = new Map();
     for (const m of D.materials) for (const a of [m.name, ...m.aliases]) matByNorm.set(norm(a), m);
-    recById = new Map((D.recipes || []).map((r) => [r.id, r])); // older feed data has no recipes: crafting shows "coming soon"
-    devById = new Map((D.devices || []).map((v) => [v.id, v])); // older feed data has no devices: disassembly shows "coming soon"
+    recById = new Map((D.recipes || []).map((r) => [r.id, r])); // an empty list: crafting shows "coming soon"
+    devById = new Map((D.devices || []).map((v) => [v.id, v])); // an empty list: disassembly shows "coming soon"
     devByNorm = new Map();
     for (const v of D.devices || []) for (const a of [v.name, ...v.aliases]) devByNorm.set(norm(a), v);
     // TAC map link for each area: the data's own area link, else the centre of its named spots
@@ -261,7 +263,7 @@
         a.namedSrc.add(h.src);
       }
       // a spot matching "industrial / warehouse / depot" five ways is still one industrial spot: cap generic matches
-      for (const id of h.places || []) { const e = touch(id); e.hint++; if (e.hint <= 2) e.score += SCORE.hint; }
+      for (const id of h.places || []) { if (!placeById.has(id)) continue; const e = touch(id); e.hint++; if (e.hint <= 2) e.score += SCORE.hint; }
     }
     for (const n of m.negatives || []) if (n.poi) poiOf(n.poi).negs.add(n.indep || n.src);
     if (m.crate && m.crate.length)
@@ -278,13 +280,13 @@
       a.mine += a.places.reduce((s, x) => s + x.mine, 0);
       a.crates = a.places.reduce((s, x) => ({ t2: s.t2 + x.p.crates.t2, t3: s.t3 + x.p.crates.t3 }), { t2: 0, t3: 0 });
       a.score += [...a.found.values()].reduce((s, w) => s + w, 0) + a.tips.size * 2 - a.negs.size * 3;
-      a.named = a.found; // kept for older callers
       a.players = a.found.size;
       a.label = a.mine ? 'mine' : a.players >= 2 ? 'confirmed' : a.players === 1 ? 'reported' : a.tips.size ? 'tip' : 'inferred';
       return a;
     });
     const strength = { mine: 5, confirmed: 4, reported: 3, tip: 2, inferred: 1 };
-    return list.filter((a) => a.score > 0).sort((x, y) => y.score - x.score || strength[y.label] - strength[x.label] || x.poi.localeCompare(y.poi));
+    // your own finds always show, and rank first
+    return list.filter((a) => a.score > 0 || a.mine).sort((x, y) => (y.mine ? 1 : 0) - (x.mine ? 1 : 0) || y.score - x.score || strength[y.label] - strength[x.label] || x.poi.localeCompare(y.poi));
   }
 
   // Fallback when nothing is known: POIs with the most material crates (only when the data has TAC map spots).
@@ -293,7 +295,7 @@
     for (const p of D.places || []) {
       const c = p.crates.t2 + p.crates.t3;
       if (!c) continue;
-      if (!by.has(p.poi)) by.set(p.poi, { poi: p.poi, score: 0, places: [], label: 'guess', named: new Set(), mine: 0, crates: { t2: 0, t3: 0 } });
+      if (!by.has(p.poi)) by.set(p.poi, { poi: p.poi, score: 0, places: [], label: 'guess', mine: 0, crates: { t2: 0, t3: 0 } });
       const a = by.get(p.poi);
       a.score += c; a.crates.t2 += p.crates.t2; a.crates.t3 += p.crates.t3;
       a.places.push({ p, score: c, crate: c });
@@ -413,7 +415,7 @@
   }
 
   function renderStation(key) {
-    const [name, lvl] = key.split('|');
+    const [name] = key.split('|');
     const levels = D.stations.filter((s) => s.station === name).sort((a, b) => (a.level ?? 1) - (b.level ?? 1));
     let html = `<div class="card-h"><span class="name">${nm(name)}</span><span class="cat">${esc(tt(levels[0]?.room || ''))}</span></div>`;
     for (const s of levels) {
@@ -503,6 +505,8 @@
   // ---------- state + UI ----------
   const S = { results: [], sel: 0, mode: 'search', view: 'finder', logMat: null, logPlaces: [], logSel: 0, logPick: null };
   const input = $('q');
+  // what's still missing for the whole plan, whatever the search box is filtering the rows by
+  const totalShort = (need, have) => Object.keys(need).reduce((s, id) => s + Math.max(0, need[id] - (have[id] || 0)), 0);
 
   // ---------- checklist view ----------
   function renderChecklist() {
@@ -534,9 +538,9 @@
     const abc = (a, b) => tx(a.name).localeCompare(tx(b.name), lang, { sensitivity: 'base' });
     const needed = mats.filter((m) => need[m.id]).sort(abc);
     const others = mats.filter((m) => !need[m.id]).sort(abc);
-    const totalShort = needed.reduce((s, m) => s + short(m), 0);
+    const missing = totalShort(need, CL.have);
     const summary = CL.plan.length
-      ? `${tp('cl.upgrades', CL.plan.length)} · ${totalShort ? `<span class="need">${tp('cl.itemsToFind', totalShort)}</span>` : `<span class="ok">${t('cl.haveAll')}</span>`}${cash ? ` · ${t('st.cash', { cash: '$' + cash.toLocaleString('en-US') })}` : ''}`
+      ? `${tp('cl.upgrades', CL.plan.length)} · ${missing ? `<span class="need">${tp('cl.itemsToFind', missing)}</span>` : `<span class="ok">${t('cl.haveAll')}</span>`}${cash ? ` · ${t('st.cash', { cash: '$' + cash.toLocaleString('en-US') })}` : ''}`
       : t('cl.intro');
     $('card').innerHTML = `<div id="cardInner"><div class="card-h"><span class="name">${t('cl.title')}</span><span class="cat">${t('cl.haveNeed')}</span></div><div class="used">${summary}</div>`
       + `<section><h3>${t('cl.neededPlan')}</h3>${needed.length ? needed.map(row).join('') : `<div class="note">${t('cl.nothingPlanned')}</div>`}</section>`
@@ -570,10 +574,10 @@
     const byName = (a, b) => abc(a.name, b.name);
     const needed = mats.filter((m) => need[m.id]).sort(byName);
     const others = mats.filter((m) => !need[m.id]).sort(byName);
-    const totalShort = needed.reduce((s, m) => s + short(m), 0);
+    const missing = totalShort(need, have);
     const n = CL.craft.plan.length;
     const summary = n
-      ? `${tp('cl.recipes', n)} · ${totalShort ? `<span class="need">${tp('cl.itemsToFind', totalShort)}</span>` : `<span class="ok">${t('cl.haveAll')}</span>`}`
+      ? `${tp('cl.recipes', n)} · ${missing ? `<span class="need">${tp('cl.itemsToFind', missing)}</span>` : `<span class="ok">${t('cl.haveAll')}</span>`}`
       : t('cl.craftIntro');
     $('card').innerHTML = `<div id="cardInner"><div class="card-h"><span class="name">${t('cl.craftTitle')}</span><span class="cat">${t('cl.haveNeed')}</span></div><div class="used">${summary}</div>`
       + `<section><h3>${t('cl.neededCrafts')}</h3>${needed.length ? needed.map(row).join('') : `<div class="note">${t('cl.nothingPlanned')}</div>`}</section>`
@@ -614,9 +618,9 @@
     const devRows = [...todo.values()].sort(byName).map((d) => `<div class="row"><div class="top">${d.dev ? `<a class="poi spot" data-dev="${esc(d.dev.id)}" title="${esc(t('tip.openDevice'))}">${nm(d.name)}</a>` : `<span class="poi">${nm(d.name)}</span>`}<span class="muted">→ ${esc(d.parts.join(', '))}</span></div>`
       + `<div class="spots">${d.dev ? devWhere(d.dev, 4) : `<span class="muted">${t('dev.noLoc')}</span>`}</div></div>`).join('');
     const pick = parts.map((m) => `<div class="pl-row"><a class="pl-name spot" data-part="${esc(m.id)}">${nm(m.name)}</a><span class="muted">${esc(m.dismantle_from.map((d) => tx(d.item)).join(', '))}</span><span class="pl-lvls">${disBtn(m.id)}</span></div>`).join('');
-    const totalShort = wanted.reduce((s, m) => s + short(m), 0);
-    const summary = wanted.length
-      ? `${tp('cl.partsWanted', wanted.length)} · ${totalShort ? `<span class="need">${tp('cl.devicesToDismantle', totalShort)}</span>` : `<span class="ok">${t('cl.haveAll')}</span>`}`
+    const missing = totalShort(need, have), wantedAll = Object.keys(need).length;
+    const summary = wantedAll
+      ? `${tp('cl.partsWanted', wantedAll)} · ${missing ? `<span class="need">${tp('cl.devicesToDismantle', missing)}</span>` : `<span class="ok">${t('cl.haveAll')}</span>`}`
       : t('cl.disIntro');
     $('card').innerHTML = `<div id="cardInner"><div class="card-h"><span class="name">${t('cl.disTitle')}</span><span class="cat">${t('cl.haveNeed')}</span></div><div class="used">${summary}</div>`
       + `<section><h3>${t('cl.devicesTitle')}</h3>${devRows || `<div class="note">${wanted.length ? t('cl.nothingLeft') : t('cl.nothingPlanned')}</div>`}</section>`
@@ -636,7 +640,6 @@
   function setView(v) {
     if (S.mode === 'log') endLog();
     S.view = v;
-    $('frame').classList.toggle('cl', isList(v));
     input.placeholder = placeholder(v);
     input.value = '';
     if (isList(v)) { $('results').innerHTML = ''; rerender(); } else update();
@@ -702,7 +705,7 @@
     S.results = search(input.value); S.sel = 0; renderResults(); renderCard();
   }
   function select(i) { if (!S.results.length) return; S.sel = (i + S.results.length) % S.results.length; renderResults(); renderCard(); }
-  function toView(v) { if (S.view !== v) { S.view = v; $('frame').classList.remove('cl'); input.placeholder = placeholder(v); } }
+  function toView(v) { if (S.view !== v) { S.view = v; input.placeholder = placeholder(v); } }
   const toFinder = () => toView('finder');
   // these fill the search box with the name you see (German in German mode; search matches both)
   function openMaterial(id) { // crafting pages stay in Crafting; a crafting-only ingredient always opens there
@@ -1001,7 +1004,7 @@
       try {
         const r = await api().get_data();
         if (r && r.data) { useData(r.data); dataInfo = { ...dataInfo, source: r.source, version: r.data_version }; }
-      } catch (e) { console.error(e); useData(window.GZW_DATA); dataInfo = { ...dataInfo, source: 'bundled', version: null }; }
+      } catch (e) { console.error(e); useData(window.GZW_DATA || NO_DATA); dataInfo = { ...dataInfo, source: 'bundled', version: null }; }
       if (meta.text_scale) setTextScale(meta.text_scale);
       if (meta.mode === 'hud') document.body.classList.add('hud'); // page was reloaded while pinned
       lang = meta.language === 'de' ? 'de' : 'en';
@@ -1009,7 +1012,7 @@
     // Preview/screenshot hook for a plain browser: index.html#q=steel&mode=hud&fs=1.3&lang=de&view=checklist&help=1
     const h = new URLSearchParams(location.hash.slice(1));
     if (!api() && h.get('lang')) lang = h.get('lang') === 'de' ? 'de' : 'en';
-    if (!api() && VIEWS.includes(h.get('view'))) { S.view = h.get('view'); $('frame').classList.toggle('cl', isList(S.view)); }
+    if (!api() && VIEWS.includes(h.get('view'))) S.view = h.get('view');
     applyLang();
     if (!api() && h.has('q')) input.value = h.get('q');
     if (!api() && h.get('fs')) setTextScale(parseFloat(h.get('fs')) || 1);
